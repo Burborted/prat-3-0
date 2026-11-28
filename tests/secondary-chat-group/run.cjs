@@ -28,7 +28,7 @@ try {
     console.log(`Testing ${classic ? 'Classic' : 'modern'} UI APIs`);
     run(classic ? 'classic' : 'modern', [
       `TEST_CLASSIC = ${classic}`, read('harness.lua'), onHide, addon, read('cases.lua'),
-    ], '29 tests passed');
+    ], '34 tests passed');
   }
   // Optional integration test uses real installed Ace libraries. No account files
   // are read or modified. Prat's module loader is always the current checkout.

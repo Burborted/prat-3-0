@@ -4,6 +4,7 @@ Test.flush()
 assert(not integrationError, integrationError)
 local m = Prat.Addon:GetModule("SecondaryChatGroup")
 assert(not m:IsEnabled() and m.db.char and not m.db.profile.on)
+m.worldEvents:GetScript("OnEvent")(m.worldEvents, "PLAYER_ENTERING_WORLD")
 m.db.profile.on = true
 m:Enable(); Test.flush()
 assert(m:IsEnabled())

@@ -246,6 +246,11 @@ Prat:AddModuleToLoad(function()
 		self:SecureHook(frame, "SetParent", function()
 			if self.active[id] and frame:GetParent() ~= holder then frame:SetParent(holder) end
 		end)
+		-- Native dock reanchoring can run after login restoration without calling
+		-- FloatingChatFrame_Update. Keep member geometry and visibility owned here.
+		for _, method in ipairs({ "SetPoint", "SetAllPoints", "SetSize", "Hide" }) do
+			self:SecureHook(frame, method, "QueueLayout")
+		end
 		self:SecureHook(frame, "AddMessage", function()
 			if self.active[id] and self.db.char.selected ~= id then
 				state.unread = true
@@ -391,6 +396,10 @@ Prat:AddModuleToLoad(function()
 				button.label:SetWidth(tabWidth - 20)
 				x = x + tabWidth + GAP
 				state.holder:SetShown(self.db.char.selected == entry.id)
+				if not frame:IsShown() then
+					SetChatWindowShown(entry.id, true)
+					frame:Show()
+				end
 			end
 		end
 		self.group:SetClampRectInsets(0, -20, (row + 1) * TAB_HEIGHT + 3, -30)
@@ -411,11 +420,11 @@ Prat:AddModuleToLoad(function()
 		self.group:SetShown(self:IsEnabled() and next(self.active) ~= nil)
 	end
 	function module:QueueLayout()
-		if self.pending or self.applying or not self:IsEnabled() then return end
+		if self.pending or self.applying or self.stopping or not self.worldReady or not self:IsEnabled() then return end
 		self.pending = true
 		C_Timer.After(0, function()
 			self.pending = nil
-			if self:IsEnabled() then self:Layout() end
+			if self:IsEnabled() and self.worldReady and not self.stopping then self:Layout() end
 		end)
 	end
 	function module:Release(id, restore, closed)
@@ -425,6 +434,9 @@ Prat:AddModuleToLoad(function()
 		local frame, tab, saved = state.frame, NativeTab(state.frame), state.entry.restore
 		self:Unhook(frame, "SetParent")
 		self:Unhook(frame, "AddMessage")
+		for _, method in ipairs({ "SetPoint", "SetAllPoints", "SetSize", "Hide" }) do
+			self:Unhook(frame, method)
+		end
 		self:Unhook(tab, "SetParent")
 		Deactivate(frame)
 		local root = FCF_GetCurrentFullScreenFrame and FCF_GetCurrentFullScreenFrame() or state.parent or UIParent
@@ -487,6 +499,7 @@ Prat:AddModuleToLoad(function()
 		if entry then entry.name = WindowInfo(frame:GetID()); self:QueueLayout() end
 	end
 	function module:RestoreMembers()
+		if not self.worldReady or self.stopping or not self:IsEnabled() then return end
 		if InCombat() then self.restorePending = true; return end
 		self.restorePending = nil
 		-- Drop stale IDs instead of taking over a different window in a recycled slot.
@@ -494,7 +507,8 @@ Prat:AddModuleToLoad(function()
 		for i = #self.db.char.members, 1, -1 do
 			local entry = self.db.char.members[i]
 			local name, shown, _, docked = WindowInfo(entry.id)
-			if seen[entry.id] or not self:CanUse(entry.id) or name ~= entry.name or not (shown or docked) then
+			if seen[entry.id] or (not self.active[entry.id] and
+				(not self:CanUse(entry.id) or name ~= entry.name or not (shown or docked))) then
 				table.remove(self.db.char.members, i)
 			else
 				seen[entry.id] = true
@@ -504,9 +518,9 @@ Prat:AddModuleToLoad(function()
 		self:Layout()
 	end
 	function module:PLAYER_ENTERING_WORLD()
-		self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-		-- Let Prat Memory and Blizzard's chat restoration finish first.
-		C_Timer.After(0, function() if self:IsEnabled() then self:RestoreMembers() end end)
+		-- Wait until the actual world-entry event has finished dispatching. Later
+		-- native layout changes are repaired by the member hooks above.
+		C_Timer.After(0, function() self:RestoreMembers() end)
 	end
 	function module:PLAYER_REGEN_DISABLED()
 		self:StopMoving()
@@ -521,9 +535,9 @@ Prat:AddModuleToLoad(function()
 		self:OnModuleDisable()
 	end
 	function module:OnModuleEnable()
+		self.stopping = nil
 		self.active = {}
 		self:CreateGroup()
-		self:RegisterEvent("PLAYER_ENTERING_WORLD")
 		self:RegisterEvent("PLAYER_REGEN_DISABLED")
 		self:RegisterEvent("PLAYER_REGEN_ENABLED")
 		self:RegisterEvent("PLAYER_LOGOUT")
@@ -535,9 +549,10 @@ Prat:AddModuleToLoad(function()
 		for _, name in ipairs({ "FCF_UpdateChatFrameParent", "FCF_SetFullScreenFrame", "FCF_ClearFullScreenFrame" }) do
 			if type(_G[name]) == "function" then self:SecureHook(name, "QueueLayout") end
 		end
-		if IsLoggedIn() then self:PLAYER_ENTERING_WORLD() end
+		if self.worldReady then self:PLAYER_ENTERING_WORLD() end
 	end
 	function module:OnModuleDisable()
+		self.stopping = true
 		self:StopMoving()
 		-- Retain saved membership so re-enabling restores the group.
 		local ids = {}
@@ -549,6 +564,16 @@ Prat:AddModuleToLoad(function()
 	end
 	Prat:SetModuleInit(module, function(self)
 		self.active = {}
+		-- IsLoggedIn is already true at PLAYER_LOGIN, before chat restoration is
+		-- finished. Observe world readiness even while this module is disabled so
+		-- enabling it later in the session can still restore immediately.
+		self.worldEvents = CreateFrame("Frame")
+		self.worldEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+		self.worldEvents:RegisterEvent("PLAYER_LEAVING_WORLD")
+		self.worldEvents:SetScript("OnEvent", function(_, event)
+			self.worldReady = event == "PLAYER_ENTERING_WORLD"
+			if self.worldReady and self:IsEnabled() then self:PLAYER_ENTERING_WORLD() end
+		end)
 		self:RegisterChatCommand("pratgroup", "OpenOptions")
 	end)
 end)

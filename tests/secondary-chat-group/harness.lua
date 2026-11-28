@@ -30,11 +30,17 @@ function methods:IsShown() return self.shown end
 function methods:IsVisible() return visible(self) end
 function methods:SetScript(key, callback) self.scripts[key] = callback end
 function methods:GetScript(key) return self.scripts[key] end
+function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+function methods:UnregisterEvent(event) if self.events then self.events[event] = nil end end
 function methods:SetPoint(...) self.points[#self.points + 1] = {...} end
-function methods:ClearAllPoints() self.points = {} end
+function methods:ClearAllPoints() self.points = {}; self.allPoints = nil end
 function methods:GetNumPoints() return #self.points end
 function methods:GetPoint(index) return unpack(self.points[index]) end
-function methods:SetAllPoints(frame) self.allPoints = frame end
+function methods:SetAllPoints(frame)
+	self:ClearAllPoints()
+	self.allPoints = frame
+	self.points = {{"TOPLEFT", frame, "TOPLEFT", 0, 0}, {"BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0}}
+end
 function methods:SetWidth(width) self.width = width end
 function methods:SetHeight(height) self.height = height end
 function methods:GetWidth() return self.width end
@@ -256,7 +262,15 @@ function Test.start()
 	Test.createFrames()
 	callbacks.init(module)
 	module:OnModuleEnable()
+	Test.worldEvent("PLAYER_ENTERING_WORLD")
 	flush()
+end
+function Test.worldEvent(event)
+	if module.worldEvents then
+		module.worldEvents:GetScript("OnEvent")(module.worldEvents, event)
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		module:PLAYER_ENTERING_WORLD()
+	end
 end
 Test.module = function() return module end
 Test.options = function() return options end

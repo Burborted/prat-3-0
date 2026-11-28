@@ -45,7 +45,12 @@ closed or reused. Proxy tabs inherit only `ChatTabArtTemplate`, avoiding the mai
 dock's native drag/minimize scripts. Classic texture keys and missing fullscreen
 helpers are handled separately.
 
-Run `npm ci --ignore-scripts` and `npm test` for Lua 5.1 parsing and 29 behavior
+Restoration waits for actual world entry, including when enabled later in the
+session. Member hooks repair subsequent native geometry and visibility changes
+without changing the selected tab or input focus. Pending repairs cannot restore
+the group after logout or module disable.
+
+Run `npm ci --ignore-scripts` and `npm test` for Lua 5.1 parsing and 34 behavior
 checks against each simulated modern and Classic UI API. Set `PRAT_PATH` to an
 installed Prat folder to additionally run four tests using its actual Ace
 libraries and the current checkout's module loader. Test dependencies and fixtures
